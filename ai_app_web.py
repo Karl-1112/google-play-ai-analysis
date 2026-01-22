@@ -4,6 +4,34 @@ from google_play_scraper import search, app
 import plotly.express as px
 import os
 
+def show_methodology():
+    with st.expander("查看【算法建模说明与数学公式】"):
+        st.markdown("""
+        ### 1. 市场拥挤度 (Market Crowding)
+        **数学公式：**
+        """)
+        st.latex(r"Crowding = \frac{Total\ Apps}{Unique\ Developers}")
+        st.write("""
+        * **解释**：如果数值远大于 1（例如 1000 个应用只有 200 个开发者），说明少数开发者占据了大量位置，市场竞争异常激烈。
+        """)
+
+        st.markdown("---")
+        st.markdown("### 2. 市场成熟度 (Market Maturity)")
+        st.latex(r"Maturity = Median(Installs)")
+        st.write("""
+        * **解释**：中位数反映了市场 50% 的应用所处的水平。如果中位数非常大，说明该赛道已经被大公司/成熟应用占据，个人创业者进入门槛极高。
+        """)
+
+        st.markdown("---")
+        st.markdown("### 3. 个人机会度 (Opportunity Score)")
+        st.markdown("**数学逻辑：**")
+        st.latex(r"Q1_{installs} = 25^{th}\ Percentile\ of\ Installs")
+        st.latex(r"Condition: (Installs \le Q1_{installs}) \ \& \ (Rating \ge 4.2)")
+        st.write("""
+        * **解释**：我们特意避开了会被头部应用拉高的“中位数”，转而使用 **Q1（25%分位数）** 来寻找市场底部的“生存空间”。
+        * **标准**：下载量处于后 25% 但评分却超过 4.2 的应用，代表了**“高质量、低竞争”**的利基市场，是个人或小团队的最佳切入点。
+        """)
+
 # --- 1. 页面配置 ---
 st.set_page_config(page_title="AI 市场调研助手", layout="wide")
 st.title("AI 应用市场大数据看板")
@@ -148,6 +176,10 @@ if df is not None:
 
     st.subheader("详细原始数据表")
     st.dataframe(df, use_container_width=True)
+    
+    st.markdown("---")
+    show_methodology()
 
 else:
     st.info("请在左侧侧边栏输入关键词并点击『立即更新数据』开始分析。")
+
