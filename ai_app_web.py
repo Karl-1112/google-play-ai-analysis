@@ -6,9 +6,38 @@ import os
 
 # --- 1. 页面配置 ---
 st.set_page_config(page_title="AI 市场调研助手", layout="wide")
-st.title("🚀 AI 应用市场大数据看板")
+st.title("AI 应用市场大数据看板")
 
-# --- 2. 爬虫核心功能 ---
+# --- 2. 数学建模分析函数 ---
+def run_analysis_model(df):
+    """
+    数学建模：从抓取到的 DataFrame 中提取市场咨询指标
+    """
+    # 指标 1：市场拥挤度 (Crowding)
+    app_count = len(df)
+    developer_count = df["开发者"].nunique()
+    crowding = round(app_count / developer_count, 2)
+
+    # 指标 2：市场成熟度 (基于下载量中位数)
+    median_installs = int(df["下载量"].median())
+
+    # 指标 3：利基市场机会 (评分 > 4.2 且下载量在后 25%)
+    q25_installs = df["下载量"].quantile(0.25)
+    opportunity_apps = df[
+        (df["下载量"] <= q25_installs) & 
+        (df["评分"] >= 4.2)
+    ]
+    
+    return {
+        "app_count": app_count,
+        "dev_count": developer_count,
+        "crowding": crowding,
+        "median_installs": median_installs,
+        "opp_count": len(opportunity_apps),
+        "opp_list": opportunity_apps
+    }
+
+# --- 3. 爬虫核心功能 ---
 def run_spider(keyword, num):
     st.info(f"正在抓取关于 '{keyword}' 的数据，请稍候...")
     results = search(keyword, lang="en", country="us", n_hits=num)
@@ -32,50 +61,93 @@ def run_spider(keyword, num):
         progress_bar.progress((i + 1) / len(results))
     
     df = pd.DataFrame(apps_data)
-    # 保存一份副本，防止下次进来报错
+    # 保存本地缓存 (相对路径，兼容云端)
     df.to_csv("ai_apps.csv", index=False, encoding="utf-8-sig")
     return df
 
-# --- 3. 侧边栏交互 ---
+# --- 4. 侧边栏交互 ---
 st.sidebar.header("配置选项")
 search_kw = st.sidebar.text_input("搜索关键词", "AI Chatbot")
-search_num = st.sidebar.slider("抓取数量", 10, 50, 20)
+search_num = st.sidebar.slider("抓取数量", 10, 100, 30)
 click_scrape = st.sidebar.button("立即更新数据")
 
-# --- 4. 数据加载逻辑 ---
+# --- 5. 数据加载逻辑 ---
 df = None
 
-# 如果用户点击了按钮，或者本地还没有 csv 文件
+# 如果点击按钮或本地无文件，触发爬虫
 if click_scrape or not os.path.exists("ai_apps.csv"):
     df = run_spider(search_kw, search_num)
 else:
-    # 尝试读取本地文件
     try:
         df = pd.read_csv("ai_apps.csv")
-        if df.empty: # 如果文件是空的
+        if df.empty:
             st.warning("本地数据文件为空，请点击左侧按钮抓取。")
             df = None
     except:
         st.warning("尚未获取数据，请点击左侧按钮。")
         df = None
 
-# --- 5. 数据展示界面 ---
+# --- 6. 执行分析与界面展示 ---
 if df is not None:
-    # KPI 指标
-    col1, col2, col3 = st.columns(3)
-    col1.metric("分析应用数", len(df))
-    col2.metric("平均评分", f"{df['评分'].mean():.2f}")
-    col3.metric("最高下载量", f"{df['下载量'].max():,}")
-
-    # 图表：评分分布
-    st.subheader("应用评分分布图")
-    fig = px.histogram(df, x="评分", nbins=10, color_discrete_sequence=['#636EFA'])
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 数据表
-    st.subheader("详细数据表")
-    st.dataframe(df, use_container_width=True)
+    # 运行数学模型
+    metrics = run_analysis_model(df)
     
-    # 下载按钮
-    csv_data = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-    st.download_button("📥 导出分析报告 (CSV)", data=csv_data, file_name="ai_analysis.csv")
+    # A. 核心咨询报告区
+    st.markdown("---")
+    st.header("💡 市场准入深度咨询报告")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("市场拥挤度", f"{metrics['crowding']}")
+    c2.metric("下载中位数", f"{metrics['median_installs']:,}")
+    c3.metric("潜力机会数", metrics['opp_count'])
+    c4.metric("开发者总数", metrics['dev_count'])
+    
+    # 动态建议逻辑
+    if metrics['crowding'] > 1.8:
+        st.error("🔴 **市场极度拥挤**：大厂垄断明显，平均每个开发者拥有多个应用，不建议个人尝试该领域。")
+    elif metrics['opp_count'] > 3:
+        st.success("🟢 **发现蓝海机会**：存在评分高但下载量尚小的应用，说明细分需求未被满足，建议深入调研。")
+    else:
+        st.warning("🟡 **市场观望**：成熟度较高，竞争环境平稳，需寻找极其独特的差异化切入点。")
+
+    # B. 潜力黑马表
+    with st.expander("查看【个人机会】潜力黑马名单"):
+        st.write("这些应用拥有极佳的用户口碑（评分>4.2），但目前的市场渗透率较低（下载量处于后25%）：")
+        st.table(metrics['opp_list'][["名称", "评分", "下载量"]].sort_values(by="评分", ascending=False).head(10))
+
+    # C. 可视化分析区
+    st.markdown("---")
+    st.subheader("市场竞争象限分析")
+    
+    fig_qx = px.scatter(
+        df, x="下载量", y="评分", 
+        hover_name="名称", 
+        log_x=True, 
+        color="评分",
+        template="plotly_white",
+        title="横轴: 下载规模 (对数) | 轴轴: 用户评分"
+    )
+    fig_qx.add_hline(y=4.2, line_dash="dash", line_color="green", annotation_text="优质应用门槛")
+    st.plotly_chart(fig_qx, use_container_width=True)
+
+    # D. 详细数据展示区
+    st.markdown("---")
+    col_a, col_b = st.columns([2, 1])
+    
+    with col_a:
+        st.subheader("应用评分分布")
+        fig_hist = px.histogram(df, x="评分", nbins=15, color_discrete_sequence=['#636EFA'])
+        st.plotly_chart(fig_hist, use_container_width=True)
+    
+    with col_b:
+        st.subheader("数据概览")
+        st.write(f"平均评分: {df['评分'].mean():.2f}")
+        st.write(f"最大评论数: {df['评论数'].max():,}")
+        csv_data = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+        st.download_button("导出全量 CSV 报告", data=csv_data, file_name="ai_analysis_report.csv")
+
+    st.subheader("详细原始数据表")
+    st.dataframe(df, use_container_width=True)
+
+else:
+    st.info("请在左侧侧边栏输入关键词并点击『立即更新数据』开始分析。")
