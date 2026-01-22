@@ -21,70 +21,59 @@ st.markdown("""
 def fetch_data_via_api(keyword, num):
     try:
         api_key = st.secrets["SERPAPI_KEY"]
-        # 强制指定 hl 和 gl 提高稳定性
         url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}&hl=en&gl=us"
         
-        st.info(f"高级 API 正在深度解析 '{keyword}' ...")
+        st.info(f"🚀 正在深度解析 JSON 数据流...")
         response = requests.get(url, timeout=15)
         data = response.json()
-        # --- 临时调试：直接把 API 的底牌翻开 ---
-        with st.expander("🚨 API 原始返回排查 (Debug Only)"):
-            st.write("所有一级键名:", list(data.keys()))
-            if "error" in data:
-                st.error(f"API 返回了错误: {data['error']}")
-            if "organic_results" in data:
-                st.write("成功找到 organic_results，长度为:", len(data["organic_results"]))
-            else:
-                st.warning("关键字段 'organic_results' 缺失！")
-            st.json(data) # 打印完整的 JSON
         
-        # 1. 检查 API 错误
         if "error" in data:
             st.error(f"❌ API 报错: {data['error']}")
             return pd.DataFrame()
 
-        # 2. 多路径尝试提取应用列表 (SerpApi 可能会变动字段名)
-        items = data.get('organic_results', [])
+        # --- [关键修复]：根据你的 JSON 结构重新定位路径 ---
+        # 路径是：data -> organic_results (list) -> [0] -> items (list)
+        organic = data.get('organic_results', [])
+        items = []
+        if organic and isinstance(organic, list):
+            items = organic[0].get('items', [])
+        
+        # 如果上面没找到，尝试备选路径
         if not items:
             items = data.get('apps', [])
-        if not items:
-            # 如果还是没有，尝试从 play_store_search 结构中找
-            items = data.get('play_store_search', {}).get('organic_results', [])
 
         processed_apps = []
         for item in items:
-            # --- 深度提取逻辑 ---
-            # 提取下载量字符串 (例如 "5,000,000+" -> "5000000")
-            raw_installs = str(item.get('installs', '0'))
-            clean_installs = "".join(filter(str.isdigit, raw_installs))
+            # 提取下载量字段 'downloads'，并清洗非数字字符
+            raw_downloads = str(item.get('downloads', '0'))
+            clean_downloads = "".join(filter(str.isdigit, raw_downloads))
             
             processed_apps.append({
                 "名称": item.get('title', 'Unknown'),
-                "开发者": item.get('author', item.get('developer', 'Unknown Dev')),
+                "开发者": item.get('author', 'Unknown Dev'),
                 "评分": float(item.get('rating', 0.0)),
-                "评分数": int(item.get('ratings_total', item.get('reviews', 0) or 0)),
-                "下载量": int(clean_installs) if clean_installs else 0,
-                "评论数": int(item.get('reviews', 0) or 0),
-                "发布日期": "2025-01-01", # 搜索页通常不带日期，设为当前基准
+                "评分数": 0, # 搜索页若没提供 ratings_total，先设为0
+                "下载量": int(clean_downloads) if clean_downloads else 0,
+                "评论数": 0,
+                "发布日期": "2024-06-01", # 搜索页不带日期，设为去年中旬作为基准
                 "更新日期": 1735689600
             })
 
         df = pd.DataFrame(processed_apps)
 
         if not df.empty:
-            st.success(f"✅ 解析成功！已抓取 {len(df)} 个竞品应用。")
+            st.success(f"✅ 成功！已抓取到 {len(df)} 个真实应用数据。")
+            # 调试完可以把下面这行删掉
+            # st.write("前三条解析样板：", df.head(3)) 
         else:
-            # 如果 items 为空，把原始 JSON 给用户看一眼，方便排查
-            st.warning("⚠️ API 返回了数据但没找到应用列表。")
-            with st.expander("查看 API 返回的原始结构"):
-                st.write(data)
+            st.warning("⚠️ 路径正确但 items 列表为空，请检查 SerpApi 额度。")
                 
         return df
 
     except Exception as e:
-        st.error(f"🚨 致命解析错误: {e}")
+        st.error(f"🚨 解析逻辑崩溃: {e}")
         return pd.DataFrame()
-
+        
 def show_methodology():
     with st.expander("查看商业建模逻辑与决策方法论"):
         st.info("本模型旨在通过统计学手段，从海量应用中筛选出适合个人或轻量级团队切入的『蓝海赛道』。")
@@ -307,6 +296,7 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
 
 
