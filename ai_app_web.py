@@ -4,6 +4,7 @@ from google_play_scraper import search, app
 import plotly.express as px
 import os
 from datetime import datetime
+import requests
 
 # --- 1. 页面配置与美化 ---
 st.set_page_config(page_title="AI 市场智库", layout="wide", initial_sidebar_state="expanded")
@@ -18,42 +19,71 @@ st.markdown("""
 
 # --- 2. 核心函数定义 ---
 
+def fetch_data_via_api(keyword, num):
+    """通过 SerpApi 获取高质量数据"""
+    # 建议在 Streamlit Secrets 中配置 SERPAPI_KEY
+    try:
+        api_key = st.secrets["SERPAPI_KEY"] 
+        url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}"
+        
+        st.info(f"正在通过高级 API 检索 '{keyword}' ...")
+        response = requests.get(url)
+        data = response.json()
+        
+        processed_apps = []
+        # 提取 API 返回的标准化字段
+        for item in data.get('organic_results', [])[:num]:
+            processed_apps.append({
+                "名称": item.get('title'),
+                "开发者": item.get('author'),
+                "评分": item.get('rating', 0),
+                "评分数": item.get('ratings_total', 0), # API 字段名可能不同，需注意
+                "下载量": item.get('installs', '0'), 
+                "评论数": item.get('reviews', 0),
+                # API 通常不直接提供发布日期，这里为了兼容后续代码，设为未知或留空
+                "发布日期": "未知", 
+                "更新日期": 0 
+            })
+        
+        df = pd.DataFrame(processed_apps)
+        # 数据清洗：API 返回的下载量通常带逗号或加号
+        if not df.empty:
+            if '下载量' in df.columns:
+                df['下载量'] = pd.to_numeric(df['下载量'].astype(str).str.replace(r'[\+ ,]', '', regex=True), errors='coerce').fillna(0)
+            cols_to_fix = ['评分数', '评分', '评论数']
+            for col in cols_to_fix:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        return df
+    except Exception as e:
+        st.error(f"API 调用失败: {e}")
+        return pd.DataFrame()
+
 def show_methodology():
     with st.expander("查看商业建模逻辑与决策方法论"):
         st.info("本模型旨在通过统计学手段，从海量应用中筛选出适合个人或轻量级团队切入的『蓝海赛道』。")
         
-        # --- 1. 市场拥挤度 ---
         st.markdown("### 1. 市场拥挤度 (Market Density)")
         st.latex(r"Density = \frac{N_{Apps}}{N_{Developers}}")
         st.write("""
-        **【为什么要这样计算？】**
-        * **逻辑**：这个指标衡量的是『平均每个开发者维护的应用数』。
-        * **商业洞察**：如果比值显著高于 1.0（如 1.8+），说明市场上存在大量由同一个开发者发布的『矩阵式产品』。这通常意味着职业团队在利用规模效应占领关键词排位，个人开发者单打独斗的获客成本会极高。
-        * **判断准则**：数值越小，说明市场越散乱，『草根』突围的机会越大。
+        * **逻辑**：衡量平均每个开发者维护的应用数。
+        * **商业洞察**：比值过高（如 1.8+）意味着职业团队在利用矩阵产品占位，个人获客成本高。
         """)
-
         st.markdown("---")
         
-        # --- 2. 市场成熟度 ---
         st.markdown("### 2. 市场成熟度 (Market Maturity)")
         st.latex(r"Maturity = \text{Median}(\text{Installs})")
         st.write("""
-        **【为什么要这样计算？】**
-        * **逻辑**：使用『中位数』而非『平均数』是为了排除极个别下载量过亿的『巨无霸』应用对数据的干扰。
-        * **商业洞察**：中位数代表了市场的中坚力量。如果中位数很高（如 1M+），说明这是一个被巨头统治的『存量市场』，用户心智已被占领。
-        * **判断准则**：中位数温和的市场更适合创新型产品进入。
+        * **逻辑**：使用中位数排除巨头干扰。
+        * **商业洞察**：中位数过高说明是存量市场，适合差异化切入。
         """)
-
         st.markdown("---")
         
-        # --- 3. 个人机会度 ---
         st.markdown("### 3. 个人机会度 (Niche Opportunity Score)")
         st.latex(r"Target = \{ App \mid Installs \le Q1 \ \& \ Score \ge 4.2 \}")
         st.write("""
-        **【为什么要这样计算？】**
-        * **逻辑**：我们使用 **Q1 (25% 分位数)** 锚定市场中活跃度较低、尚未破圈的『小众层』，并配合 **4.2+** 的高评分。
-        * **商业洞察**：这套逻辑是在寻找『口碑极好但推广还没跟上』的明珠。这些应用证明了某个细分功能是真实的『刚需』，但它们的开发者可能缺乏营销资源。
-        * **为什么不用中位数？**：中位数包含了太多的平庸应用。只有下探到前 25% 的小众圈层，才能发现那些『尚未被巨头发现，但用户用了都说好』的垂直切入点。
+        * **逻辑**：锚定 Q1 (25% 分位数) 且评分 > 4.2 的应用。
+        * **商业洞察**：寻找口碑好但尚未推广开的明珠，适合个人开发者模仿或超越。
         """)
 
 def run_analysis_model(df):
@@ -72,7 +102,7 @@ def run_analysis_model(df):
     }
 
 def run_spider(keyword, num):
-    st.info(f"正在深度检索 '{keyword}' 的市场存量数据...")
+    st.info(f"正在深度检索 '{keyword}' 的市场存量数据 (爬虫模式)...")
     results = search(keyword, lang="en", country="us", n_hits=num)
     apps_data = []
     
@@ -94,23 +124,18 @@ def run_spider(keyword, num):
             continue
         progress_bar.progress((i + 1) / len(results))
     
-    # --- 关键修复步骤 ---
-    # 1. 先定义 df
+    # --- 数据加固与清洗 ---
     df = pd.DataFrame(apps_data)
     
-    # 2. 检查 df 是否为空，如果不为空再进行清洗
     if not df.empty:
-        # 确保这些列存在并转换为数字
         cols_to_fix = ['下载量', '评分数', '评分', '评论数']
         for col in cols_to_fix:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     else:
-        # 如果是空的，也要给它定义好列名，防止后面建模函数报错
         st.warning("未能抓取到有效数据，请尝试更换关键词。")
         df = pd.DataFrame(columns=["名称", "开发者", "评分", "评分数", "评论数", "下载量", "发布日期", "更新日期"])
 
-    # 3. 保存和返回
     df.to_csv("ai_apps.csv", index=False, encoding="utf-8-sig")
     return df
 
@@ -119,19 +144,29 @@ st.sidebar.title("AI 市场监测系统")
 st.sidebar.markdown("---")
 search_kw = st.sidebar.text_input("目标赛道关键词", "AI Chatbot")
 search_num = st.sidebar.slider("样本抓取规模", 20, 150, 40)
+
+# [新增] 数据源选择
+data_source = st.sidebar.selectbox("数据源切换", ["基础爬虫 (免费)", "高级 API (高质量)"])
+
 click_scrape = st.sidebar.button("同步云端数据", use_container_width=True)
 
 df = None
-if click_scrape or not os.path.exists("ai_apps.csv"):
-    df = run_spider(search_kw, search_num)
-else:
+
+# [逻辑修改] 根据按钮点击和选择的数据源来决定执行哪个函数
+if click_scrape:
+    if data_source == "高级 API (高质量)":
+        df = fetch_data_via_api(search_kw, search_num)
+    else:
+        df = run_spider(search_kw, search_num)
+elif os.path.exists("ai_apps.csv"):
+    # 如果没点击按钮但有本地缓存，则读取缓存
     try:
         df = pd.read_csv("ai_apps.csv")
     except:
-        st.sidebar.error("数据加载失败，请重新同步。")
+        st.sidebar.error("缓存数据加载失败，请重新同步。")
 
-# --- 4. 主界面展示 (UI 质感提升核心：Tabs) ---
-if df is not None:
+# --- 4. 主界面展示 ---
+if df is not None and not df.empty:
     st.title(f"📊 {search_kw} 市场准入深度分析")
     
     # 顶部 KPI 指标卡
@@ -147,81 +182,79 @@ if df is not None:
 
     with tab1:
         st.subheader("市场准入评估")
-        # --- 新增：绘图前的数据清洗 ---
-        # 1. 确保评分数是数值型，并将缺失值填充为 0
-        df_plot = df.copy()
-        df_plot['评分数'] = pd.to_numeric(df_plot['评分数'], errors='coerce').fillna(0)
         
-        # 2. Plotly 的 size 参数不能接受 0 或负数，我们做一个微小的偏移处理
-        # 这样评分数为 0 的应用会显示为一个极小的点，而不是导致程序报错
-        df_plot['展示尺寸'] = df_plot['评分数'].apply(lambda x: x if x > 0 else 0.1)
+        # 绘图前的数据清洗 (针对 Plotly size 参数)
+        df_plot = df.copy()
+        if '评分数' in df_plot.columns:
+            df_plot['评分数'] = pd.to_numeric(df_plot['评分数'], errors='coerce').fillna(0)
+            df_plot['展示尺寸'] = df_plot['评分数'].apply(lambda x: x if x > 0 else 0.1)
+        else:
+            df_plot['评分数'] = 0
+            df_plot['展示尺寸'] = 0.1
 
         if metrics['crowding'] > 1.8:
-            st.error("🔴 **高风险区域**：开发者矩阵排位明显...")
-        # ... 原有的建议逻辑 ...
+            st.error("🔴 **高风险区域**：开发者矩阵排位明显，新手入场获客成本极高，建议寻找更细分的切入点。")
+        elif metrics['opp_count'] > 3:
+            st.success("🟢 **蓝海机会窗**：发现高评分低下载应用。建议调研这些『潜力黑马』的功能差异化。")
+        else:
+            st.warning("🟡 **观望区域**：市场分布均匀，建议通过独特的技术壁垒或垂直行业深度结合再入场。")
         
-        # --- 修改后的绘图代码 ---
-        fig_qx = px.scatter(
-            df_plot, # 使用清洗后的数据
-            x="下载量", 
-            y="评分", 
-            hover_name="名称", 
-            log_x=True, 
-            color="评分", 
-            size="展示尺寸", # 使用处理过的尺寸列
-            template="plotly_white",
-            title="市场竞争象限 (气泡大小代表评分热度)",
-            # 增加对 hover 数据的控制，让它依然显示原始的“评分数”
-            hover_data={"评分数": True, "展示尺寸": False} 
-        )
-        fig_qx.add_hline(y=4.2, line_dash="dash", line_color="green")
-        st.plotly_chart(fig_qx, use_container_width=True)
+        # 象限图
+        if '评分' in df_plot.columns and '下载量' in df_plot.columns:
+            fig_qx = px.scatter(
+                df_plot,
+                x="下载量", 
+                y="评分", 
+                hover_name="名称", 
+                log_x=True, 
+                color="评分", 
+                size="展示尺寸",
+                template="plotly_white",
+                title="市场竞争象限 (气泡大小代表评分热度)",
+                hover_data={"评分数": True, "展示尺寸": False} 
+            )
+            fig_qx.add_hline(y=4.2, line_dash="dash", line_color="green")
+            st.plotly_chart(fig_qx, use_container_width=True)
 
     with tab2:
         st.subheader("分析维度：赛道迭代趋势")
         
-        # 预处理：确保日期格式正确
+        # 注意：API 模式下可能没有发布日期或更新日期，做兼容处理
         df_trend = df.copy()
-        # 处理更新日期（通常是时间戳，需要转换）
-        df_trend['更新日期_dt'] = pd.to_datetime(df_trend['更新日期'], unit='s', errors='coerce')
-        df_trend['更新年份'] = df_trend['更新日期_dt'].dt.year
         
-        # 处理发布日期
-        df_trend['发布日期_dt'] = pd.to_datetime(df_trend['发布日期'], errors='coerce')
-        df_trend['发布年份'] = df_trend['发布日期_dt'].dt.year
+        # 检查是否有更新日期列
+        if '更新日期' in df_trend.columns and df_trend['更新日期'].iloc[0] != 0:
+            df_trend['更新日期_dt'] = pd.to_datetime(df_trend['更新日期'], unit='s', errors='coerce')
+            df_trend['更新年份'] = df_trend['更新日期_dt'].dt.year
+        else:
+            df_trend['更新年份'] = "无数据"
 
-        # --- 布局：左右对比 ---
+        # 检查是否有发布日期列
+        if '发布日期' in df_trend.columns and df_trend['发布日期'].iloc[0] != "未知":
+            df_trend['发布日期_dt'] = pd.to_datetime(df_trend['发布日期'], errors='coerce')
+            df_trend['发布年份'] = df_trend['发布日期_dt'].dt.year
+        else:
+            df_trend['发布年份'] = "无数据"
+
         col_t1, col_t2 = st.columns(2)
         
         with col_t1:
             st.write("**新应用入场年份**")
-            release_count = df_trend.groupby('发布年份').size().reset_index(name='数量')
-            fig_rel = px.bar(release_count, x='发布年份', y='数量', 
-                           color_discrete_sequence=['#AB63FA'], title="各年份新上线应用数")
-            st.plotly_chart(fig_rel, use_container_width=True)
-            st.caption("注：搜索结果前排通常被23-24年的成熟产品占据，25年新品可能排在搜索结果后段。")
+            if '发布年份' in df_trend.columns and df_trend['发布年份'].dtype != 'O': # 检查是否为数字类型
+                release_count = df_trend.groupby('发布年份').size().reset_index(name='数量')
+                fig_rel = px.bar(release_count, x='发布年份', y='数量', color_discrete_sequence=['#AB63FA'])
+                st.plotly_chart(fig_rel, use_container_width=True)
+            else:
+                st.info("当前数据源暂未提供发布日期信息（API 模式可能不包含此数据）。")
 
         with col_t2:
             st.write("**最近一次更新年份**")
-            update_count = df_trend.groupby('更新年份').size().reset_index(name='数量')
-            fig_upd = px.bar(update_count, x='更新年份', y='数量', 
-                           color_discrete_sequence=['#00CC96'], title="应用最后维护时间分布")
-            st.plotly_chart(fig_upd, use_container_width=True)
-            st.caption("注：这里能反映市场活跃度，2025/2026年更新越多，说明竞争越激烈。")
-
-        # --- 深度洞察说明 ---
-        st.markdown("---")
-        st.info("**深度咨询结论：**")
-        
-        # 逻辑判断：如果2025/2026更新占比高
-        active_25_26 = len(df_trend[df_trend['更新年份'] >= 2025])
-        active_rate = (active_25_26 / len(df_trend)) * 100
-        
-        st.write(f"在当前的样本中，有 **{active_rate:.1f}%** 的应用在 2025 年及以后进行过版本迭代。")
-        if active_rate > 70:
-            st.markdown("✅ **结论**：这是一个**『超高频竞争赛道』**。老应用通过 2025 年的疯狂更新死守排位，新玩家若无巨大创新，很难靠自然流量突围。")
-        else:
-            st.markdown("⚠️ **结论**：部分老应用已进入维护停滞期，这可能是你通过『功能迭代』实现弯道超车的机会点。")
+            if '更新年份' in df_trend.columns and df_trend['更新年份'].dtype != 'O':
+                update_count = df_trend.groupby('更新年份').size().reset_index(name='数量')
+                fig_upd = px.bar(update_count, x='更新年份', y='数量', color_discrete_sequence=['#00CC96'])
+                st.plotly_chart(fig_upd, use_container_width=True)
+            else:
+                st.info("当前数据源暂未提供更新日期信息。")
 
     with tab3:
         st.subheader("全量样本观测站")
@@ -232,9 +265,8 @@ if df is not None:
     st.markdown("---")
     show_methodology()
 
+elif df is not None and df.empty:
+    st.warning("未找到有效数据，请检查关键词或 API 配额。")
+
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
-
-
-
-
