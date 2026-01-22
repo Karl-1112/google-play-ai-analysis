@@ -72,10 +72,10 @@ def run_analysis_model(df):
     }
 
 def run_spider(keyword, num):
-    """爬虫逻辑"""
     st.info(f"正在深度检索 '{keyword}' 的市场存量数据...")
     results = search(keyword, lang="en", country="us", n_hits=num)
     apps_data = []
+    
     progress_bar = st.progress(0)
     for i, result in enumerate(results):
         try:
@@ -90,17 +90,29 @@ def run_spider(keyword, num):
                 "发布日期": detail.get('released', '未知'),
                 "更新日期": detail.get('updated', 0)
             })
-        except: continue
+        except:
+            continue
         progress_bar.progress((i + 1) / len(results))
-        df['下载量'] = pd.to_numeric(df['下载量'], errors='coerce').fillna(0)
-        df['评分数'] = pd.to_numeric(df['评分数'], errors='coerce').fillna(0)
-
     
+    # --- 关键修复步骤 ---
+    # 1. 先定义 df
     df = pd.DataFrame(apps_data)
+    
+    # 2. 检查 df 是否为空，如果不为空再进行清洗
+    if not df.empty:
+        # 确保这些列存在并转换为数字
+        cols_to_fix = ['下载量', '评分数', '评分', '评论数']
+        for col in cols_to_fix:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    else:
+        # 如果是空的，也要给它定义好列名，防止后面建模函数报错
+        st.warning("未能抓取到有效数据，请尝试更换关键词。")
+        df = pd.DataFrame(columns=["名称", "开发者", "评分", "评分数", "评论数", "下载量", "发布日期", "更新日期"])
+
+    # 3. 保存和返回
     df.to_csv("ai_apps.csv", index=False, encoding="utf-8-sig")
     return df
-
-
 
 # --- 3. 侧边栏与数据流 ---
 st.sidebar.title("AI 市场监测系统")
@@ -222,6 +234,7 @@ if df is not None:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
 
 
