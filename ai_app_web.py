@@ -6,9 +6,7 @@ import os
 from datetime import datetime
 import requests
 
-# --- 1. 页面配置与美化 ---
-st.set_page_config(page_title="AI 市场智库", layout="wide", initial_sidebar_state="expanded")
-# 荧光深色主题注入
+# 荧光深色主题注入（增强版）
 st.markdown("""
     <style>
     /* 全局背景与文字 */
@@ -17,37 +15,29 @@ st.markdown("""
         color: #e0e0e0;
     }
     
-    /* 侧边栏 */
+    /* 重点修复：强制侧边栏和主页面的所有标签、文字为纯白色 */
+    [data-testid="stWidgetLabel"], .stMarkdown p, label {
+        color: #ffffff !important;
+        font-weight: 500 !important;
+    }
+
+    /* 侧边栏整体背景 */
     [data-testid="stSidebar"] {
         background-color: #0d0d0d;
         border-right: 1px solid #333;
     }
 
-    /* 指标卡片美化 */
+    /* 指标卡片 (KPI) 荧光效果 */
     [data-testid="stMetricValue"] {
-        color: #00ffcc !important; /* 荧光青 */
+        color: #00ffcc !important; 
         text-shadow: 0 0 10px rgba(0,255,204,0.5);
     }
     
-    /* 标题颜色 */
+    /* 标题样式 */
     h1, h2, h3 {
         color: #ffffff !important;
-        letter-spacing: 1px;
+        text-shadow: 0 0 5px rgba(255,255,255,0.2);
     }
-    
-    /* 自定义荧光标签样式 */
-    .highlight-s { color: #39ff14; font-weight: bold; text-shadow: 0 0 5px #39ff14; } /* 荧光绿 */
-    .highlight-a { color: #00f5ff; font-weight: bold; text-shadow: 0 0 5px #00f5ff; } /* 荧光蓝 */
-    .highlight-b { color: #fff01f; font-weight: bold; text-shadow: 0 0 5px #fff01f; } /* 荧光黄 */
-    .highlight-c { color: #ff3131; font-weight: bold; text-shadow: 0 0 5px #ff3131; } /* 霓虹红 */
-    </style>
-    """, unsafe_allow_html=True)
-
-# 注入一点自定义 CSS，让指标卡片更醒目
-st.markdown("""
-    <style>
-    [data-testid="stMetricValue"] { font-size: 28px; color: #007bff; }
-    .main { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -265,6 +255,9 @@ elif os.path.exists("ai_apps.csv"):
 # --- 4. 主界面展示 ---
 if df is not None and not df.empty:
     st.title(f"📊 {search_kw} 市场准入深度分析")
+    show_methodology() 
+    # 后面接你的 KPI 指标卡代码...
+    metrics = run_analysis_model(df)
     
     # 顶部 KPI 指标卡
     metrics = run_analysis_model(df)
@@ -375,3 +368,4 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
