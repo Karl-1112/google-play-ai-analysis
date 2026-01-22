@@ -87,13 +87,24 @@ def show_methodology():
         """)
 
 def run_analysis_model(df):
-    """数学建模分析"""
+    """数学建模分析 (修复除以零报错版)"""
     app_count = len(df)
     developer_count = df["开发者"].nunique()
-    crowding = round(app_count / developer_count, 2)
-    median_installs = int(df["下载量"].median())
-    q25_installs = df["下载量"].quantile(0.25)
-    opportunity_apps = df[(df["下载量"] <= q25_installs) & (df["评分"] >= 4.2)]
+    
+    # --- [修复点] 增加除数检查 ---
+    if developer_count > 0:
+        crowding = round(app_count / developer_count, 2)
+    else:
+        crowding = 0  # 或者设为 1，避免报错
+        
+    median_installs = int(df["下载量"].median()) if not df.empty else 0
+    q25_installs = df["下载量"].quantile(0.25) if not df.empty else 0
+    
+    # 避免空数据导致报错
+    if not df.empty:
+        opportunity_apps = df[(df["下载量"] <= q25_installs) & (df["评分"] >= 4.2)]
+    else:
+        opportunity_apps = pd.DataFrame() # 空表
     
     return {
         "app_count": app_count, "dev_count": developer_count,
@@ -270,3 +281,4 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
