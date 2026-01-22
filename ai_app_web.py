@@ -8,6 +8,40 @@ import requests
 
 # --- 1. 页面配置与美化 ---
 st.set_page_config(page_title="AI 市场智库", layout="wide", initial_sidebar_state="expanded")
+# 荧光深色主题注入
+st.markdown("""
+    <style>
+    /* 全局背景与文字 */
+    .stApp {
+        background-color: #050505;
+        color: #e0e0e0;
+    }
+    
+    /* 侧边栏 */
+    [data-testid="stSidebar"] {
+        background-color: #0d0d0d;
+        border-right: 1px solid #333;
+    }
+
+    /* 指标卡片美化 */
+    [data-testid="stMetricValue"] {
+        color: #00ffcc !important; /* 荧光青 */
+        text-shadow: 0 0 10px rgba(0,255,204,0.5);
+    }
+    
+    /* 标题颜色 */
+    h1, h2, h3 {
+        color: #ffffff !important;
+        letter-spacing: 1px;
+    }
+    
+    /* 自定义荧光标签样式 */
+    .highlight-s { color: #39ff14; font-weight: bold; text-shadow: 0 0 5px #39ff14; } /* 荧光绿 */
+    .highlight-a { color: #00f5ff; font-weight: bold; text-shadow: 0 0 5px #00f5ff; } /* 荧光蓝 */
+    .highlight-b { color: #fff01f; font-weight: bold; text-shadow: 0 0 5px #fff01f; } /* 荧光黄 */
+    .highlight-c { color: #ff3131; font-weight: bold; text-shadow: 0 0 5px #ff3131; } /* 霓虹红 */
+    </style>
+    """, unsafe_allow_html=True)
 
 # 注入一点自定义 CSS，让指标卡片更醒目
 st.markdown("""
@@ -126,6 +160,43 @@ def run_analysis_model(df):
         "crowding": crowding, "median_installs": median_installs,
         "opp_count": len(opportunity_apps), "opp_list": opportunity_apps
     }
+    
+    def generate_tier_list(df):
+    """【补充：评级逻辑】根据下载量和评分，给应用打上 S/A/B/C 评级标签"""
+    def categorize(row):
+        installs = row['下载量']
+        score = row['评分']
+        # 门槛设定 (根据你的截图，下载量中位数很大，我们设定为 100万)
+        high_traffic = 1000000  
+        high_score = 4.3       
+        
+        if installs >= high_traffic and score >= high_score:
+            return "👑 S级 (王者)"
+        elif installs < high_traffic and score >= high_score:
+            return "💎 A级 (潜力)"
+        elif installs >= high_traffic and score < high_score:
+            return "⚠️ B级 (风险)"
+        else:
+            return "🌑 C级 (末流)"
+            
+    df['评级'] = df.apply(categorize, axis=1)
+    return df
+
+def get_color_styled_df(df):
+    """【美化函数】为数据框应用荧光色样式"""
+    def apply_tier_style(val):
+        if not isinstance(val, str): return ''
+        if "S级" in val: return 'color: #39ff14; font-weight: bold; text-shadow: 0 0 5px #39ff14;'
+        if "A级" in val: return 'color: #00f5ff; font-weight: bold; text-shadow: 0 0 5px #00f5ff;'
+        if "B级" in val: return 'color: #fff01f; font-weight: bold; text-shadow: 0 0 5px #fff01f;'
+        if "C级" in val: return 'color: #ff3131; font-weight: bold; text-shadow: 0 0 5px #ff3131;'
+        return ''
+
+    # 确保'评级'列存在
+    if '评级' not in df.columns:
+        df = generate_tier_list(df)
+
+    return df.style.map(apply_tier_style, subset=['评级'])
 
 def run_spider(keyword, num):
     st.info(f"正在深度检索 '{keyword}' 的市场存量数据 (爬虫模式)...")
@@ -283,19 +354,28 @@ if df is not None and not df.empty:
                 st.info("当前数据源暂未提供更新日期信息。")
 
     with tab3:
-        st.subheader("全量样本观测站")
-        st.dataframe(df, use_container_width=True)
-        csv_data = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-        st.download_button("导出分析报告 (.csv)", data=csv_data, file_name=f"{search_kw}_report.csv")
-
-    st.markdown("---")
-    show_methodology()
+        st.subheader("全量样本：黑金数据终端")
+    
+        # 假设 df 已经包含了之前计算的'评级'列
+        styled_df = get_color_styled_df(df)
+    
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            column_config={
+                "名称": st.column_config.TextColumn("应用名"),
+                "下载量": st.column_config.NumberColumn("下载量", format="%d 📥"),
+                "评分": st.column_config.ProgressColumn("用户满意度", min_value=0, max_value=5, format="%.1f ⭐"),
+                "评级": st.column_config.TextColumn("商业价值评级"),
+            }
+        )
 
 elif df is not None and df.empty:
     st.warning("未找到有效数据，请检查关键词或 API 配额。")
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
 
 
