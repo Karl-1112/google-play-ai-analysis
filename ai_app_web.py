@@ -20,43 +20,49 @@ st.markdown("""
 # --- 2. 核心函数定义 ---
 
 def fetch_data_via_api(keyword, num):
-    """通过 SerpApi 获取高质量数据"""
-    # 建议在 Streamlit Secrets 中配置 SERPAPI_KEY
     try:
         api_key = st.secrets["SERPAPI_KEY"] 
-        url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}"
+        # 增加 hl=en 和 gl=us 确保返回结果稳定
+        url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}&hl=en&gl=us"
         
-        st.info(f"正在通过高级 API 检索 '{keyword}' ...")
+        st.info(f"正在通过 SerpApi 检索 '{keyword}' ...")
         response = requests.get(url)
         data = response.json()
         
+        # 调试用：如果返回了错误信息，直接显示在界面上
+        if "error" in data:
+            st.error(f"API 报错: {data['error']}")
+            return pd.DataFrame()
+
         processed_apps = []
-        # 提取 API 返回的标准化字段
-        for item in data.get('organic_results', [])[:num]:
+        # SerpApi 的 Google Play 结果放在 'organic_results' 或 'apps' 字段下
+        items = data.get('organic_results', [])
+        
+        for item in items[:num]:
             processed_apps.append({
-                "名称": item.get('title'),
-                "开发者": item.get('author'),
+                "名称": item.get('title', '未知'),
+                "开发者": item.get('author', item.get('developer', '未知')), # 尝试两个可能的字段名
                 "评分": item.get('rating', 0),
-                "评分数": item.get('ratings_total', 0), # API 字段名可能不同，需注意
+                "评分数": item.get('ratings_total', item.get('reviews', 0)),
                 "下载量": item.get('installs', '0'), 
                 "评论数": item.get('reviews', 0),
-                # API 通常不直接提供发布日期，这里为了兼容后续代码，设为未知或留空
                 "发布日期": "未知", 
                 "更新日期": 0 
             })
         
         df = pd.DataFrame(processed_apps)
-        # 数据清洗：API 返回的下载量通常带逗号或加号
+        
         if not df.empty:
-            if '下载量' in df.columns:
-                df['下载量'] = pd.to_numeric(df['下载量'].astype(str).str.replace(r'[\+ ,]', '', regex=True), errors='coerce').fillna(0)
+            # 强化清洗逻辑，去掉 "5,000,000+" 这种字符串中的干扰符
+            df['下载量'] = df['下载量'].astype(str).str.replace(r'[^\d]', '', regex=True)
+            df['下载量'] = pd.to_numeric(df['下载量'], errors='coerce').fillna(0)
+            
             cols_to_fix = ['评分数', '评分', '评论数']
             for col in cols_to_fix:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         return df
     except Exception as e:
-        st.error(f"API 调用失败: {e}")
+        st.error(f"API 彻底连接失败: {e}")
         return pd.DataFrame()
 
 def show_methodology():
@@ -281,4 +287,5 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
