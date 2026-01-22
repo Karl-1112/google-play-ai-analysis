@@ -161,7 +161,7 @@ def run_analysis_model(df):
         "opp_count": len(opportunity_apps), "opp_list": opportunity_apps
     }
     
-    def generate_tier_list(df):
+def generate_tier_list(df):
     """【补充：评级逻辑】根据下载量和评分，给应用打上 S/A/B/C 评级标签"""
     def categorize(row):
         installs = row['下载量']
@@ -375,10 +375,3 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
-
-
-
-
-
-
-
