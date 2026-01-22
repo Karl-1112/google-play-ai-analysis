@@ -18,60 +18,61 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 2. 核心函数定义 ---
-
 def fetch_data_via_api(keyword, num):
     try:
-        api_key = st.secrets["SERPAPI_KEY"] 
-        # 增加 num 参数给 API，确保它返回足够多的数据页
-        url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}&hl=en&gl=us&num={num}"
+        api_key = st.secrets["SERPAPI_KEY"]
+        # 强制指定 hl 和 gl 提高稳定性
+        url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}&hl=en&gl=us"
         
-        st.info(f"高级 API 正在全力检索 '{keyword}' ...")
-        response = requests.get(url)
+        st.info(f"高级 API 正在深度解析 '{keyword}' ...")
+        response = requests.get(url, timeout=15)
         data = response.json()
         
-        # 检查 API 是否返回了错误（如 Key 错误或欠费）
+        # 1. 检查 API 错误
         if "error" in data:
             st.error(f"❌ API 报错: {data['error']}")
             return pd.DataFrame()
 
-        # --- 核心修复：多字段兼容抓取 ---
-        # SerpApi 的数据可能藏在 'organic_results' 或 'apps' 字段中
+        # 2. 多路径尝试提取应用列表 (SerpApi 可能会变动字段名)
         items = data.get('organic_results', [])
         if not items:
-            items = data.get('apps', []) # 备选字段
-            
+            items = data.get('apps', [])
+        if not items:
+            # 如果还是没有，尝试从 play_store_search 结构中找
+            items = data.get('play_store_search', {}).get('organic_results', [])
+
         processed_apps = []
         for item in items:
-            # 这里的提取逻辑更加健壮，增加了默认值
+            # --- 深度提取逻辑 ---
+            # 提取下载量字符串 (例如 "5,000,000+" -> "5000000")
+            raw_installs = str(item.get('installs', '0'))
+            clean_installs = "".join(filter(str.isdigit, raw_installs))
+            
             processed_apps.append({
-                "名称": item.get('title', 'Unknown App'),
+                "名称": item.get('title', 'Unknown'),
                 "开发者": item.get('author', item.get('developer', 'Unknown Dev')),
-                "评分": item.get('rating', 0.0),
-                "评分数": item.get('ratings_total', item.get('reviews', 0)),
-                "下载量": item.get('installs', '0'), 
-                "评论数": item.get('reviews', 0),
-                "发布日期": item.get('released', '2025-01-01'), # API 有时在 detail 中才给，这里给个保底
-                "更新日期": 1735689600 # 2025-01-01 的时间戳，作为保底
+                "评分": float(item.get('rating', 0.0)),
+                "评分数": int(item.get('ratings_total', item.get('reviews', 0) or 0)),
+                "下载量": int(clean_installs) if clean_installs else 0,
+                "评论数": int(item.get('reviews', 0) or 0),
+                "发布日期": "2025-01-01", # 搜索页通常不带日期，设为当前基准
+                "更新日期": 1735689600
             })
-        
+
         df = pd.DataFrame(processed_apps)
-        
+
         if not df.empty:
-            # 清洗下载量：将 "5,000,000+" 转化为 5000000
-            df['下载量'] = df['下载量'].astype(str).str.replace(r'[^\d]', '', regex=True)
-            df['下载量'] = pd.to_numeric(df['下载量'], errors='coerce').fillna(0)
-            
-            # 清洗评分和评分数
-            df['评分'] = pd.to_numeric(df['评分'], errors='coerce').fillna(0.0)
-            df['评分数'] = pd.to_numeric(df['评分数'], errors='coerce').fillna(0)
-            
-            st.success(f"✅ 成功抓取到 {len(df)} 条深度数据！")
+            st.success(f"✅ 解析成功！已抓取 {len(df)} 个竞品应用。")
         else:
-            st.warning("⚠️ API 返回了空列表，请检查关键词或尝试增加样本规模。")
-            
+            # 如果 items 为空，把原始 JSON 给用户看一眼，方便排查
+            st.warning("⚠️ API 返回了数据但没找到应用列表。")
+            with st.expander("查看 API 返回的原始结构"):
+                st.write(data)
+                
         return df
+
     except Exception as e:
-        st.error(f"🚨 致命错误: {e}")
+        st.error(f"🚨 致命解析错误: {e}")
         return pd.DataFrame()
 
 def show_methodology():
@@ -296,6 +297,7 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
 
 
