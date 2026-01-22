@@ -124,23 +124,50 @@ if df is not None:
         st.plotly_chart(fig_qx, use_container_width=True)
 
     with tab2:
-        st.subheader("AI 赛道发布趋势分析")
-        # 趋势分析逻辑：根据发布日期统计
-        try:
-            # 转换日期并过滤掉未知日期
-            df_trend = df[df['发布日期'] != '未知'].copy()
-            df_trend['发布日期'] = pd.to_datetime(df_trend['发布日期'])
-            df_trend['发布月份'] = df_trend['发布日期'].dt.to_period('M').astype(str)
-            
-            trend_data = df_trend.groupby('发布月份').size().reset_index(name='新上线应用数')
-            
-            fig_trend = px.line(trend_data, x='发布月份', y='新上线应用数', 
-                              title="该关键词下的 AI 应用月度发布走势",
-                              markers=True, line_shape="spline", color_discrete_sequence=['#FF4B4B'])
-            st.plotly_chart(fig_trend, use_container_width=True)
-            st.info("**趋势洞察**：如果近三个月上线数量激增，说明赛道正在快速变红；若平稳则说明仍有深挖空间。")
-        except:
-            st.warning("当前样本量不足以生成准确的日期趋势图。")
+        st.subheader("分析维度：赛道迭代趋势")
+        
+        # 预处理：确保日期格式正确
+        df_trend = df.copy()
+        # 处理更新日期（通常是时间戳，需要转换）
+        df_trend['更新日期_dt'] = pd.to_datetime(df_trend['更新日期'], unit='s', errors='coerce')
+        df_trend['更新年份'] = df_trend['更新日期_dt'].dt.year
+        
+        # 处理发布日期
+        df_trend['发布日期_dt'] = pd.to_datetime(df_trend['发布日期'], errors='coerce')
+        df_trend['发布年份'] = df_trend['发布日期_dt'].dt.year
+
+        # --- 布局：左右对比 ---
+        col_t1, col_t2 = st.columns(2)
+        
+        with col_t1:
+            st.write("**新应用入场年份**")
+            release_count = df_trend.groupby('发布年份').size().reset_index(name='数量')
+            fig_rel = px.bar(release_count, x='发布年份', y='数量', 
+                           color_discrete_sequence=['#AB63FA'], title="各年份新上线应用数")
+            st.plotly_chart(fig_rel, use_container_width=True)
+            st.caption("注：搜索结果前排通常被23-24年的成熟产品占据，25年新品可能排在搜索结果后段。")
+
+        with col_t2:
+            st.write("**最近一次更新年份**")
+            update_count = df_trend.groupby('更新年份').size().reset_index(name='数量')
+            fig_upd = px.bar(update_count, x='更新年份', y='数量', 
+                           color_discrete_sequence=['#00CC96'], title="应用最后维护时间分布")
+            st.plotly_chart(fig_upd, use_container_width=True)
+            st.caption("注：这里能反映市场活跃度，2025/2026年更新越多，说明竞争越激烈。")
+
+        # --- 深度洞察说明 ---
+        st.markdown("---")
+        st.info("**深度咨询结论：**")
+        
+        # 逻辑判断：如果2025/2026更新占比高
+        active_25_26 = len(df_trend[df_trend['更新年份'] >= 2025])
+        active_rate = (active_25_26 / len(df_trend)) * 100
+        
+        st.write(f"在当前的样本中，有 **{active_rate:.1f}%** 的应用在 2025 年及以后进行过版本迭代。")
+        if active_rate > 70:
+            st.markdown("✅ **结论**：这是一个**『超高频竞争赛道』**。老应用通过 2025 年的疯狂更新死守排位，新玩家若无巨大创新，很难靠自然流量突围。")
+        else:
+            st.markdown("⚠️ **结论**：部分老应用已进入维护停滞期，这可能是你通过『功能迭代』实现弯道超车的机会点。")
 
     with tab3:
         st.subheader("全量样本观测站")
@@ -153,3 +180,4 @@ if df is not None:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
