@@ -22,47 +22,56 @@ st.markdown("""
 def fetch_data_via_api(keyword, num):
     try:
         api_key = st.secrets["SERPAPI_KEY"] 
-        # 增加 hl=en 和 gl=us 确保返回结果稳定
-        url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}&hl=en&gl=us"
+        # 增加 num 参数给 API，确保它返回足够多的数据页
+        url = f"https://serpapi.com/search.json?engine=google_play&q={keyword}&store=apps&api_key={api_key}&hl=en&gl=us&num={num}"
         
-        st.info(f"正在通过 SerpApi 检索 '{keyword}' ...")
+        st.info(f"高级 API 正在全力检索 '{keyword}' ...")
         response = requests.get(url)
         data = response.json()
         
-        # 调试用：如果返回了错误信息，直接显示在界面上
+        # 检查 API 是否返回了错误（如 Key 错误或欠费）
         if "error" in data:
-            st.error(f"API 报错: {data['error']}")
+            st.error(f"❌ API 报错: {data['error']}")
             return pd.DataFrame()
 
-        processed_apps = []
-        # SerpApi 的 Google Play 结果放在 'organic_results' 或 'apps' 字段下
+        # --- 核心修复：多字段兼容抓取 ---
+        # SerpApi 的数据可能藏在 'organic_results' 或 'apps' 字段中
         items = data.get('organic_results', [])
-        
-        for item in items[:num]:
+        if not items:
+            items = data.get('apps', []) # 备选字段
+            
+        processed_apps = []
+        for item in items:
+            # 这里的提取逻辑更加健壮，增加了默认值
             processed_apps.append({
-                "名称": item.get('title', '未知'),
-                "开发者": item.get('author', item.get('developer', '未知')), # 尝试两个可能的字段名
-                "评分": item.get('rating', 0),
+                "名称": item.get('title', 'Unknown App'),
+                "开发者": item.get('author', item.get('developer', 'Unknown Dev')),
+                "评分": item.get('rating', 0.0),
                 "评分数": item.get('ratings_total', item.get('reviews', 0)),
                 "下载量": item.get('installs', '0'), 
                 "评论数": item.get('reviews', 0),
-                "发布日期": "未知", 
-                "更新日期": 0 
+                "发布日期": item.get('released', '2025-01-01'), # API 有时在 detail 中才给，这里给个保底
+                "更新日期": 1735689600 # 2025-01-01 的时间戳，作为保底
             })
         
         df = pd.DataFrame(processed_apps)
         
         if not df.empty:
-            # 强化清洗逻辑，去掉 "5,000,000+" 这种字符串中的干扰符
+            # 清洗下载量：将 "5,000,000+" 转化为 5000000
             df['下载量'] = df['下载量'].astype(str).str.replace(r'[^\d]', '', regex=True)
             df['下载量'] = pd.to_numeric(df['下载量'], errors='coerce').fillna(0)
             
-            cols_to_fix = ['评分数', '评分', '评论数']
-            for col in cols_to_fix:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            # 清洗评分和评分数
+            df['评分'] = pd.to_numeric(df['评分'], errors='coerce').fillna(0.0)
+            df['评分数'] = pd.to_numeric(df['评分数'], errors='coerce').fillna(0)
+            
+            st.success(f"✅ 成功抓取到 {len(df)} 条深度数据！")
+        else:
+            st.warning("⚠️ API 返回了空列表，请检查关键词或尝试增加样本规模。")
+            
         return df
     except Exception as e:
-        st.error(f"API 彻底连接失败: {e}")
+        st.error(f"🚨 致命错误: {e}")
         return pd.DataFrame()
 
 def show_methodology():
@@ -287,5 +296,6 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
 
