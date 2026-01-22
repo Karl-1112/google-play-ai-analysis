@@ -92,9 +92,15 @@ def run_spider(keyword, num):
             })
         except: continue
         progress_bar.progress((i + 1) / len(results))
+        df['下载量'] = pd.to_numeric(df['下载量'], errors='coerce').fillna(0)
+        df['评分数'] = pd.to_numeric(df['评分数'], errors='coerce').fillna(0)
+
+    
     df = pd.DataFrame(apps_data)
     df.to_csv("ai_apps.csv", index=False, encoding="utf-8-sig")
     return df
+
+
 
 # --- 3. 侧边栏与数据流 ---
 st.sidebar.title("AI 市场监测系统")
@@ -129,17 +135,33 @@ if df is not None:
 
     with tab1:
         st.subheader("市场准入评估")
-        if metrics['crowding'] > 1.8:
-            st.error("🔴 **高风险区域**：开发者矩阵排位明显，新手入场获客成本极高，建议寻找更细分的切入点。")
-        elif metrics['opp_count'] > 3:
-            st.success("🟢 **蓝海机会窗**：发现高评分低下载应用。建议调研这些『潜力黑马』的功能差异化。")
-        else:
-            st.warning("🟡 **观望区域**：市场分布均匀，建议通过独特的技术壁垒或垂直行业深度结合再入场。")
+        # --- 新增：绘图前的数据清洗 ---
+        # 1. 确保评分数是数值型，并将缺失值填充为 0
+        df_plot = df.copy()
+        df_plot['评分数'] = pd.to_numeric(df_plot['评分数'], errors='coerce').fillna(0)
         
-        # 象限图
-        fig_qx = px.scatter(df, x="下载量", y="评分", hover_name="名称", log_x=True, 
-                          color="评分", size="评分数", template="plotly_white",
-                          title="市场竞争象限 (气泡大小代表评分热度)")
+        # 2. Plotly 的 size 参数不能接受 0 或负数，我们做一个微小的偏移处理
+        # 这样评分数为 0 的应用会显示为一个极小的点，而不是导致程序报错
+        df_plot['展示尺寸'] = df_plot['评分数'].apply(lambda x: x if x > 0 else 0.1)
+
+        if metrics['crowding'] > 1.8:
+            st.error("🔴 **高风险区域**：开发者矩阵排位明显...")
+        # ... 原有的建议逻辑 ...
+        
+        # --- 修改后的绘图代码 ---
+        fig_qx = px.scatter(
+            df_plot, # 使用清洗后的数据
+            x="下载量", 
+            y="评分", 
+            hover_name="名称", 
+            log_x=True, 
+            color="评分", 
+            size="展示尺寸", # 使用处理过的尺寸列
+            template="plotly_white",
+            title="市场竞争象限 (气泡大小代表评分热度)",
+            # 增加对 hover 数据的控制，让它依然显示原始的“评分数”
+            hover_data={"评分数": True, "展示尺寸": False} 
+        )
         fig_qx.add_hline(y=4.2, line_dash="dash", line_color="green")
         st.plotly_chart(fig_qx, use_container_width=True)
 
@@ -200,5 +222,6 @@ if df is not None:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
 
