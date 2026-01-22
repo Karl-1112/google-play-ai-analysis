@@ -27,6 +27,16 @@ def fetch_data_via_api(keyword, num):
         st.info(f"高级 API 正在深度解析 '{keyword}' ...")
         response = requests.get(url, timeout=15)
         data = response.json()
+        # --- 临时调试：直接把 API 的底牌翻开 ---
+        with st.expander("🚨 API 原始返回排查 (Debug Only)"):
+            st.write("所有一级键名:", list(data.keys()))
+            if "error" in data:
+                st.error(f"API 返回了错误: {data['error']}")
+            if "organic_results" in data:
+                st.write("成功找到 organic_results，长度为:", len(data["organic_results"]))
+            else:
+                st.warning("关键字段 'organic_results' 缺失！")
+            st.json(data) # 打印完整的 JSON
         
         # 1. 检查 API 错误
         if "error" in data:
@@ -297,6 +307,7 @@ elif df is not None and df.empty:
 
 else:
     st.info("欢迎！请在左侧侧边栏输入你想调研的 AI 关键词，点击『同步云端数据』开启实时建模。")
+
 
 
 
