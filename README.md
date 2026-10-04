@@ -1,2 +1,2 @@
 # google-play-ai-analysis
-none.
+AI APP Analysis Website
